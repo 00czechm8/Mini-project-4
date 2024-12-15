@@ -3,7 +3,7 @@ clear
 x_lim = 10;
 y_lim = 10;
 res = 2; %number of decimals
-num_obs = 10;
+num_obs = 5;
 collision_radius = 0.5;
 
 %% Set up playing field
@@ -11,13 +11,13 @@ collision_radius = 0.5;
 obs = obstacle_field(x_lim, y_lim, res, num_obs);
 %creates binary occupancy map and populates obstacles
 map = binaryOccupancyMap(y_lim, x_lim, 10^(res));
-setOccupancy(map, [obs.locs(:,1), obs.locs(:,2)], ones(10,1));
+setOccupancy(map, [obs.locs(:,1), obs.locs(:,2)], ones(num_obs,1));
 
 %inflate obstacles to safe size so robots stay clear
 inflate(map, collision_radius);
 
 %% Run Offline Planner
-startPose = [0 0 pi/2];
+startPose = [0 0 0];
 goalPose = [9.9 9.9 pi/4];
 
 %create validator map
@@ -29,28 +29,52 @@ hybridPlanner = plannerHybridAStar(validator,MinTurningRadius=1,MotionPrimitiveL
 refpath = plan(hybridPlanner,startPose,goalPose);
 
 %show plan
-show(hybridPlanner)
+% show(hybridPlanner)
 
 
-%% Me playing with formation things
+%% Move Swarm with Collision Avoidance
+g = eye(2);
+f = zeros(2);
+theta_star = [0.656; 2.7; 4; 5.8];
+r_star = [0.5; 1; 2; 1];
+gamma = startPose(3);
+x_0 = startPose(1:2);
+r_si = [0.25; 0.25; 0.25; 0.25];
 
-% th = [pi/2; pi; 3*pi/2];
-% r = [1;2;3];
-% 
-% x_0 = [0 0;
-%        5 0;
-%        10 5
-%        15 0];
-% T = size(x_0,2);
-% 
-% gamma = 0
-% th_t
-% for t = 1:T-2
-%     for i = 1:3
-%         gamma = atan2(x_0(t+2,2)-x_0(t+1,2), x_0(t+2,1)-x_0(t+1,1))-gamma
-%         th_t = atan2(x_0(t+1,2)-x_0(t,2), x_0(t+1,1)-x_0(t,1))
-% 
-%         x_i(i,1,t) = r(i)*cos(th(i)+gamma)+r_t*cos(th_t)+x_0(t,1)
-%         x_i(i,2,t) = r(i)*sin(th(i)+gamma)+r_t*sin(th_t)+x_0(t,2)
-%     end
-% end
+N = length(r_star);
+drone_pos = zeros(N, 2);
+for drone = 1:length(theta_star)
+    drone_pos(drone,:) = r_star(drone)*[cos(theta_star(drone)+gamma) sin(theta_star(drone)+gamma)]+x_0;
+end
+hold on
+plot(x_0(1), x_0(2),  "o", LineWidth=2)
+plot([drone_pos(:,1);drone_pos(1,1)], [drone_pos(:,2);drone_pos(1,2)], "r-o",LineWidth=2)
+plt(obs)
+hold off
+xlim([-1 10])
+ylim([-1 10])
+pause(1)
+clf;
+
+
+FormCBF = ZCBF(g, f, r_si, drone_pos, r_star, theta_star, gamma, x_0);
+FormCBF = FormCBF.update_obs(0.5*ones(length(obs.locs),1), drone_pos, obs.locs, gamma, x_0);
+
+for n = 2:size(refpath.States,1)
+    x_0 = refpath.States(n, 1:2);
+    gamma = refpath.States(n,3);
+    FormCBF = FormCBF.update_obs(0.5*ones(length(obs.locs),1), drone_pos, obs.locs, gamma, x_0);
+    for drone = 1:N
+        drone_pos(drone, :) = FormCBF.QP(drone);
+        FormCBF = FormCBF.update_obs(0.5*ones(length(obs.locs),1), drone_pos, obs.locs, gamma, x_0);
+    end
+    hold on
+    plot(x_0(1), x_0(2),  "o", LineWidth=2)
+    plot([drone_pos(:,1);drone_pos(1,1)], [drone_pos(:,2);drone_pos(1,2)], "r-o",LineWidth=2)
+    plt(obs)
+    hold off
+    xlim([-1 10])
+    ylim([-1 10])
+    pause(1)
+    clf;
+end
