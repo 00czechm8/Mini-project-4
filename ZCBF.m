@@ -24,7 +24,7 @@ classdef ZCBF
         end
 
         function rel_coord = calc_rel_coord(obj, r_star, theta_star, gamma, drone_center, world_pos)
-            rel_coord = world_pos'-(r_star*[cos(theta_star+gamma);sin(theta_star+gamma)]+drone_center');
+            rel_coord = world_pos-(r_star*[cos(theta_star+gamma) sin(theta_star+gamma)]+drone_center);
         end
 
         function obj = update_obs(obj, r_sig, drone_pos, obs_pos, gamma, x_0)
@@ -44,7 +44,8 @@ classdef ZCBF
             % r_sj = [obj.r_si(set_diff(1:end,current_drone));obj.r_sig];
             % r_s = obj.r_si(current_drone);
 
-            h_si = log(sum(exp( -(r_s+r_sj)+vecnorm(i_pos-j_pos,2,2) )));
+            % h_si = -log(sum(exp( (r_s+r_sj)-vecnorm(i_pos-j_pos,2,2) )));
+            h_si = -max( (r_s+r_sj)-vecnorm(i_pos-j_pos,2,2) );
         end
 
         function [bottleneck, r_sj] = find_minimizer(obj, current_drone)
@@ -74,7 +75,7 @@ classdef ZCBF
             for obstacle = 1:size(o_pos, 1)
                 if norm(i_dr-o_pos(obstacle,:))-(r_s+R_sig(obstacle)) <= bottleneck_norm
                     bottleneck = o_pos(obstacle,:);
-                    bottleneck_norm = norm(i_dr-dr_pos(drone,:))-(r_s+R_sig(drone));
+                    bottleneck_norm = norm(i_dr-dr_pos(drone,:))-(r_s+R_sig(obstacle));
                     r_sj = obj.r_sig(obstacle);
                 else
                     continue
@@ -101,7 +102,7 @@ classdef ZCBF
                 o_pos(i,:) = calc_rel_coord(obj, r_star, theta_star, gamma, x_0, o_pos(i,:));
             end
             i_pos = dr_pos(current_drone,:);
-
+            x_j = calc_rel_coord(obj, r_star, theta_star, gamma, x_0, x_j);
             dr_pos = dr_pos(setdiff(1:end, current_drone),:);
             pos = [dr_pos;o_pos];
             r_sig_j = [obj.r_si(setdiff(1:end, current_drone));obj.r_sig];               
@@ -112,25 +113,69 @@ classdef ZCBF
                 sum = sum + exp(calc_h(obj, r_s, r_sig_j(i), i_pos, pos(i,:)));
             end
 
-            val = (-(exp(calc_h(obj, r_s, r_sj, i_pos, x_j))/sum)*[(x_i(1)-x_j(1))/norm(x_i-x_j), (x_i(2)-x_j(2))/norm(x_i-x_j)])*obj.g;
+            val = -[(x_i(1)-x_j(1))/norm(x_i-x_j), (x_i(2)-x_j(2))/norm(x_i-x_j)]*obj.g;
             
 
         end
 
-        function u = QP(obj, current_drone)
+        function u_w = QP(obj, current_drone)
             r_s = obj.r_si(current_drone);
             r_sig_j = [obj.r_si(setdiff(1:end, current_drone));obj.r_sig];
-            x_j = [obj.drone_pos(setdiff(1:end, current_drone), :);obj.obs_pos];
-            x_i = obj.drone_pos(current_drone,:);
-            
-            options = optimoptions("quadprog","Display", "none");
-            H = [2 0 0; 0 2 0; 0 0 0];
-            c = [0 0 1];
-            A = [-LgHs(obj, current_drone) -calc_h(obj, r_s, r_sig_j, x_i, x_j)];
-            b = 0;
+            x_j_w = [obj.drone_pos(setdiff(1:end, current_drone), :);obj.obs_pos];
+            x_i_w = obj.drone_pos(current_drone,:);
+            r_star = obj.R_star(current_drone);
+            theta_star = obj.Theta_star(current_drone);
+            gamma = obj.Gamma;
+            x_0 = obj.X_0;
 
-            z = quadprog(H,c,A,b, [], [],[],[],[],options);
-            u = z(1:2);
+            for i = 1:size(x_j_w,1)
+                x_j(i,:) = obj.calc_rel_coord(r_star, theta_star, gamma, x_0, x_j_w(i,:)); 
+            end
+            x_i = obj.calc_rel_coord(r_star, theta_star, gamma, x_0, x_i_w);
+
+            [R_s, minimizer]= min(vecnorm(x_i_w-x_j_w, 2, 2)-(r_s+r_sig_j), [], "linear");
+
+            options = optimoptions("quadprog","Display", "none");
+            H = [2 0; 0 2];
+            c = [0 0];
+            % A = [-1 0;1 0; 0 -1; 0 1];
+            % b = [0.5 0.5 0.5 0.5]';
+            
+
+            lb = [-R_s*sqrt(2)/2+x_i(1);-R_s*sqrt(2)/2+x_i(2)];
+            ub = [R_s*sqrt(2)/2+x_i(1);R_s*sqrt(2)/2+x_i(2)];
+
+            z = quadprog(H,c,[],[], [], [],lb, ub,[],options);
+            u_rel = z(1:2);
+            u_w = x_0 + r_star*[cos(theta_star+gamma) sin(theta_star+gamma)] + u_rel';
+            psi= 0.01;
+            while psi <= 1
+                if norm(x_i-u_w) <= 0.1
+                    x_i_w = x_i_w-[psi,psi];
+                    x_i = obj.calc_rel_coord(r_star, theta_star, gamma, x_0, x_i_w);
+
+                    [R_s, minimizer]= min(vecnorm(x_i-x_j, 2, 2)-(r_s+r_sig_j), [], "linear");
+        
+                    options = optimoptions("quadprog","Display", "none");
+                    H = [2 0; 0 2];
+                    c = [0 0];
+                    % A = [-1 0;1 0; 0 -1; 0 1];
+                    % b = [0.5 0.5 0.5 0.5]';
+                    
+        
+                    lb = [-R_s*sqrt(2)/2+x_i(1);-R_s*sqrt(2)/2+x_i(2)];
+                    ub = [R_s*sqrt(2)/2+x_i(1);R_s*sqrt(2)/2+x_i(2)];
+        
+                    z = quadprog(H,c,[],[], [], [],lb, ub,[],options);
+                    u_rel = z(1:2);
+                    u_w = x_0 + r_star*[cos(theta_star+gamma) sin(theta_star+gamma)] + u_rel';
+      
+                    psi = psi+0.01;
+                else
+                    psi = 1;
+                    break
+                end
+            end
         end
     end
 end

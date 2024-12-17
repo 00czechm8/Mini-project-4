@@ -7,13 +7,16 @@ classdef obstacle_field
         %of playing field, and the number obstacles desired
         function obj = obstacle_field(x_lim, y_lim, res, num_obs)
 
-            obj.locs = [round(x_lim*rand([num_obs,1]), res), round(y_lim*rand([num_obs,1]), res)];
+            obj.locs = [round((10-3)*rand([num_obs,1])+3, res), round((10-2)*rand([num_obs,1])+3, res)];
         end
 
         %plots black dots where the obstacles are
-        function plt(obj)
-          plot(obj.locs(:,1), obj.locs(:,2), 'ko', MarkerSize=10, MarkerFaceColor='k')
-          
+        function plt(obj, y_lim,x_lim, res, collision_radius, num_obs)
+          % viscircles([obj.locs(:,1) obj.locs(:,2)], 0.75, "Color", 'k', 'EnhanceVisibility',1);
+          map = binaryOccupancyMap(y_lim, x_lim, 10^(res));
+          setOccupancy(map, [obj.locs(:,1), obj.locs(:,2)], ones(num_obs,1))
+          inflate(map, collision_radius);
+          show(map)
         end
     end
 end
