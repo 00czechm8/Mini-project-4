@@ -7,7 +7,7 @@ classdef obstacle_field
         %of playing field, and the number obstacles desired
         function obj = obstacle_field(x_lim, y_lim, res, num_obs)
 
-            obj.locs = [round((10-3)*rand([num_obs,1])+3, res), round((10-2)*rand([num_obs,1])+3, res)];
+            obj.locs = [round((10-4.2)*rand([num_obs,1])+4.2, res), round((10-4.2)*rand([num_obs,1])+4.2, res)];
         end
 
         %plots black dots where the obstacles are

@@ -5,7 +5,7 @@ disFun = @(x,y,p) ((p(1)-x).^2+(p(2)-y).^2).^.5;
 x_lim = 14;
 y_lim = 14;
 res = 2; %number of decimals
-num_obs = 12;
+num_obs = 8;
 collision_radius = 0.75;
 
 %% Set up playing field
@@ -35,7 +35,7 @@ show(hybridPlanner)
 
 
 %% Move Swarm with Collision Avoidance
-v = VideoWriter('ObstacleFormationPath1');
+v = VideoWriter('ObstacleFormationPath5');
 v.FrameRate = 5;  % Set frames per second
 open(v);  % Open video file
 
@@ -62,8 +62,11 @@ frame = getframe(gcf);
 writeVideo(v, frame);  % Write frame to video file
 pause(0.5)
 
+deviation = 0;
+ind_deviation = zeros(4,1); 
 N = length(r_star);
 for n = 2:size(refpath.States,1)
+    deviation(n) = 0; 
     gamma_prev = gamma;
     x_0 = refpath.States(n, 1:2);
     gamma = refpath.States(n,3);
@@ -114,8 +117,8 @@ for n = 2:size(refpath.States,1)
             plot(x_0(1), x_0(2),  "o", LineWidth=3)
             viscircles([[drone_pos(setdiff(1:N,drone),1)], ...
                 [drone_pos(setdiff(1:N,drone),2)]], r_si(1), "Color","#EDB120");
-            plot(dronepath(step,1),dronepath(step,2), 'go', MarkerSize=4, LineWidth=1)
-            plot(dronepath(step:end,1),dronepath(step:end,2), '--',Color="#77AC30")
+            plot(dronepath(step,1),dronepath(step,2), 'go', MarkerSize=5, LineWidth=2)
+            plot(dronepath(step:end,1),dronepath(step:end,2), '--',Color="#77AC30", LineWidth=1.5)
             
             hold off
             xlim([0 14])
@@ -123,9 +126,14 @@ for n = 2:size(refpath.States,1)
             axis square
             frame = getframe(gcf);
             writeVideo(v, frame);  % Write frame to video file
+            if n == 5 && drone == 3
+                disp("")
+            end
             pause(1)
         end
         drone_pos(drone,:) = dronepath(end,1:2);
+        deviation(n) = deviation(n)+norm(drone_pos(drone,:)-ideal_location);
+        ind_deviaton(drone, n) = norm(drone_pos(drone,:)-ideal_location);
     end
     clf;
     hold on
@@ -141,13 +149,39 @@ for n = 2:size(refpath.States,1)
     frame = getframe(gcf);
     writeVideo(v, frame);  % Write frame to video file
     pause(1)
+    deviation(n) = deviation(n)/N;
     
 end
 
 close(v)
+%%
+t = tiledlayout(N,1);
+t.TileSpacing = "tight";
+% t.Padding = "compact";
 
+for i = 1:N
+    nexttile;
+    
+    hold on
+    plot(ind_deviation(i, :), LineWidth=2)
+    plot(deviation,LineWidth=2)
+    set(gca, "FontSize", 14)
+    ylabel(i, Rotation=0, FontSize=20)
+    if i == 1
+       legend(["Agent Dev.", "Mean Form. Dev."], Location="Northwest")
+    end
+    hold off
+    if i ~= N
+        set(gca, "XTick", [])
+        % set(gca, "YTick")
+    end
+    
+end
 
-
+ylabel(t,"Deviation", "FontWeight", "bold", "FontSize", 23)
+xlabel(t,"Time Stamp [n]","FontWeight", "bold", "FontSize", 23)
+% fontsize(18, "points")
+fontname("Times New Roman")
 % g = eye(2);
 % f = zeros(2);
 % % theta_star = [0.656; 2.7; 4; 5.8];
